@@ -57,6 +57,7 @@ class HOTemplate20130523(template.Template):
                             cfn_template.CfnTemplate.OUTPUTS: OUTPUTS}
 
     functions = {
+        'digest': hot_funcs.Digest,
         'Fn::GetAZs': cfn_funcs.GetAZs,
         'get_param': hot_funcs.GetParam,
         'get_resource': cfn_funcs.ResourceRef,
@@ -273,6 +274,7 @@ class HOTemplate20130523(template.Template):
 
 class HOTemplate20141016(HOTemplate20130523):
     functions = {
+        'digest': hot_funcs.Digest,
         'get_attr': hot_funcs.GetAtt,
         'get_file': hot_funcs.GetFile,
         'get_param': hot_funcs.GetParam,
