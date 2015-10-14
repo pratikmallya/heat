@@ -142,6 +142,13 @@ class ParameterTestCommon(common.HeatTestCase):
         self.assertTrue(p.hidden())
         self.assertEqual('******', str(p))
 
+    def test_rawstring(self):
+        p = new_parameter('anechoic', {'Type': self.p_type,
+                                       'NoEcho': 'true'},
+                          self.value)
+        self.assertTrue(p.hidden())
+        self.assertEqual(self.expected, p._rawstring())
+
     def test_no_echo_false(self):
         p = new_parameter('echoic', {'Type': self.p_type,
                                      'NoEcho': 'false'},

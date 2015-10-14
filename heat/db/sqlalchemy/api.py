@@ -1189,7 +1189,13 @@ def db_encrypt_parameters_and_properties(ctxt, encryption_key, batch_size=50):
                 try:
                     param_val = env['parameters'][param_name]
                 except KeyError:
-                    param_val = param.default
+                    # use the default value of the template parameter, if it
+                    # exists
+                    default_params = tmpl.get_default_parameters()
+                    if param_name in default_params:
+                        param_val = default_params[param_name]._rawstring()
+                    else:
+                        continue
 
                 encrypted_val = crypt.encrypt(param_val, encryption_key)
                 env['parameters'][param_name] = encrypted_val

@@ -286,11 +286,19 @@ class Parameter(object):
 
     def __str__(self):
         """Return a string representation of the parameter."""
-        value = self.value()
         if self.hidden():
             return six.text_type('******')
         else:
-            return six.text_type(value)
+            return self._rawstring()
+
+    def _rawstring(self):
+        """Return a raw string representation of the parameter.
+
+        Return a string representation regardless of whether the parameter is
+        hidden.
+        """
+        value = self.value()
+        return six.text_type(value)
 
 
 class NumberParam(Parameter):
@@ -384,6 +392,9 @@ class CommaDelimitedListParam(Parameter, collections.Sequence):
     def __str__(self):
         if self.hidden():
             return super(CommaDelimitedListParam, self).__str__()
+        return self._rawstring()
+
+    def _rawstring(self):
         return ",".join(self.value())
 
     def _validate(self, val, context):
@@ -435,6 +446,9 @@ class JsonParam(Parameter):
     def __str__(self):
         if self.hidden():
             return super(JsonParam, self).__str__()
+        return self._rawstring()
+
+    def _rawstring(self):
         return encodeutils.safe_decode(jsonutils.dumps(self.value()))
 
     def _validate(self, val, context):

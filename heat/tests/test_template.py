@@ -967,6 +967,19 @@ class TemplateTest(common.HeatTestCase):
         self.assertEqual({}, empty_template['resources'])
         self.assertEqual({}, empty_template['outputs'])
 
+    def test_get_default_parameters_empty_template(self):
+        tmpl = template.Template(empty_template)
+        self.assertEqual({}, tmpl.get_default_parameters())
+
+    def test_get_default_parameters_no_defaults(self):
+        tmpl = template.Template(resource_template)
+        self.assertEqual({}, tmpl.get_default_parameters())
+
+    def test_get_default_parameters_with_defaults(self):
+        tmpl = template.Template(parameter_template)
+        result = tmpl.get_default_parameters()
+        self.assertEqual('quux', result['blarg'].value())
+
 
 class TemplateFnErrorTest(common.HeatTestCase):
     scenarios = [

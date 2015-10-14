@@ -24,6 +24,7 @@ from stevedore import extension
 from heat.common import exception
 from heat.common.i18n import _
 from heat.engine import environment
+from heat.engine import parameters
 from heat.objects import raw_template as template_object
 
 LOG = logging.getLogger(__name__)
@@ -159,6 +160,19 @@ class Template(collections.Mapping):
     def param_schemata(self, param_defaults=None):
         """Return a dict of parameters.Schema objects for the parameters."""
         pass
+
+    def get_default_parameters(self):
+        """Return a dict of default parameters as parameter objects.
+
+        Useful when the default value of the parameters are required to
+        be type checked.
+        """
+        default_params = {}
+        for name, schema in self.param_schemata().items():
+            if schema.default:
+                default_params[name] = parameters.Parameter(name, schema,
+                                                            schema.default)
+        return default_params
 
     @abc.abstractmethod
     def get_section_name(self, section):
