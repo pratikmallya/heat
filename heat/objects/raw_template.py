@@ -77,6 +77,16 @@ class RawTemplate(
                 tmpl.env.params[param_name] = crypt.encrypt(clear_text_val)
                 tmpl.env.encrypted_param_names.append(param_name)
 
+            # encrypt parameters specified in the template. These can only be
+            # default template parameter values, if specified
+            for param_name, param in tmpl.get_default_parameters().items():
+                if (not param.hidden or
+                        param_name in tmpl.env.encrypted_param_names):
+                    continue
+                clear_text_val = param._rawstring()
+                tmpl.env.params[param_name] = crypt.encrypt(clear_text_val)
+                tmpl.env.encrypted_param_names.append(param_name)
+
     @classmethod
     def create(cls, context, values):
         return cls._from_db_object(context, cls(),
