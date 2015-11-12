@@ -1476,7 +1476,7 @@ class EngineService(service.Service):
         rsrc = stack[resource_name]
 
         if callable(rsrc.signal):
-            rsrc._signal_check_action()
+            rsrc._signal_check_action(details)
             rsrc._signal_check_hook(details)
             if sync_call:
                 _resource_signal(stack, rsrc, details, False)

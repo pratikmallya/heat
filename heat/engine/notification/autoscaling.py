@@ -27,7 +27,7 @@ def send(stack,
     # see: https://wiki.openstack.org/wiki/SystemUsageData
 
     event_type = '%s.%s' % ('autoscaling', suffix)
-    body = engine_api.format_notification_body(stack)
+    body = engine_api.format_stack_notification_body(stack)
     body['adjustment_type'] = adjustment_type
     body['adjustment'] = adjustment
     body['capacity'] = capacity

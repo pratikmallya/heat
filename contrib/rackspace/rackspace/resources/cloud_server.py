@@ -92,7 +92,8 @@ class CloudServer(server.Server):
     def _check_rax_automation_complete(self, server):
         if not self._managed_cloud_started_event_sent:
             msg = _("Waiting for Rackspace Cloud automation to complete")
-            self._add_event(self.action, self.status, msg)
+            self._send_notification_and_add_event(self.action, self.status,
+                                                  msg, notfcn_type='resource')
             self._managed_cloud_started_event_sent = True
 
         if 'rax_service_level_automation' not in server.metadata:
@@ -108,7 +109,8 @@ class CloudServer(server.Server):
 
         elif mc_status == self.SM_STATUS_COMPLETE:
             msg = _("Rackspace Cloud automation has completed")
-            self._add_event(self.action, self.status, msg)
+            self._send_notification_and_add_event(self.action, self.status,
+                                                  msg, notfcn_type='resource')
             return True
 
         elif mc_status == self.SM_STATUS_BUILD_ERROR:
@@ -121,7 +123,8 @@ class CloudServer(server.Server):
     def _check_rack_connect_complete(self, server):
         if not self._rack_connect_started_event_sent:
             msg = _("Waiting for RackConnect automation to complete")
-            self._add_event(self.action, self.status, msg)
+            self._send_notification_and_add_event(
+                self.action, self.status, msg, notfcn_type='resource')
             self._rack_connect_started_event_sent = True
 
         if 'rackconnect_automation_status' not in server.metadata:
@@ -151,7 +154,8 @@ class CloudServer(server.Server):
                             reason)
 
             msg = _("RackConnect automation has completed")
-            self._add_event(self.action, self.status, msg)
+            self._send_notification_and_add_event(
+                self.action, self.status, msg, notfcn_type='resource')
             return True
 
         elif rc_status == self.RC_STATUS_FAILED:

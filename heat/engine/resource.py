@@ -36,6 +36,7 @@ from heat.engine import environment
 from heat.engine import event
 from heat.engine import function
 from heat.engine.hot import template as hot_tmpl
+from heat.engine.notification import resource as notification
 from heat.engine import properties
 from heat.engine import resources
 from heat.engine import rsrc_defn
@@ -374,9 +375,12 @@ class Resource(object):
     def _break_if_required(self, action, hook):
         """Block the resource until the hook is cleared if there is one."""
         if self.stack.env.registry.matches_hook(self.name, hook):
-            self._add_event(self.action, self.status,
-                            _("%(a)s paused until Hook %(h)s is cleared")
-                            % {'a': action, 'h': hook})
+            hook_data = {'hook': hook, 'suffix': 'start'}
+            self._send_notification_and_add_event(
+                self.action, self.status,
+                _("%(a)s paused until Hook %(h)s is cleared")
+                % {'a': action, 'h': hook}, notfcn_type='hook',
+                data=hook_data)
             self.trigger_hook(hook)
             LOG.info(_LI('Reached hook on %s'), six.text_type(self))
 
@@ -385,9 +389,10 @@ class Resource(object):
                     yield
                 except BaseException as exc:
                     self.clear_hook(hook)
-                    self._add_event(
+                    self._send_notification_and_add_event(
                         self.action, self.status,
-                        "Failure occurred while waiting.")
+                        "Failure occurred while waiting.",
+                        notfcn_type='hook', data=hook_data)
                     if (isinstance(exc, AssertionError) or
                             not isinstance(exc, Exception)):
                         raise
@@ -1353,8 +1358,10 @@ class Resource(object):
         except Exception as ex:
             LOG.error(_LE('DB error %s'), ex)
 
-    def _add_event(self, action, status, reason):
-        """Add a state change event to the database."""
+    def _send_notification_and_add_event(self, action, status, reason,
+                                         notfcn_type, data=None):
+        """Add a state change event to the database and emit notification."""
+        notification.send(self, reason, notfcn_type=notfcn_type, data=data)
         ev = event.Event(self.context, self.stack, action, status, reason,
                          self.resource_id, self.properties,
                          self.name, self.type())
@@ -1562,7 +1569,8 @@ class Resource(object):
         self._store_or_update(action, status, reason)
 
         if new_state != old_state:
-            self._add_event(action, status, reason)
+            self._send_notification_and_add_event(action, status, reason,
+                                                  notfcn_type='resource')
 
         self.stack.reset_resource_attributes()
 
@@ -1638,10 +1646,12 @@ class Resource(object):
         """
         return base64.b64encode(data)
 
-    def _signal_check_action(self):
+    def _signal_check_action(self, details):
         if self.action in self.no_signal_actions:
-            self._add_event(self.action, self.status,
-                            'Cannot signal resource during %s' % self.action)
+            self._send_notification_and_add_event(
+                self.action, self.status,
+                'Cannot signal resource during %s' % self.action,
+                notfcn_type='signal', data=details)
             msg = _('Signal resource during %s') % self.action
             raise exception.NotSupported(feature=msg)
 
@@ -1666,8 +1676,10 @@ class Resource(object):
         self.clear_hook(hook)
         LOG.info(_LI('Clearing %(hook)s hook on %(resource)s'),
                  {'hook': hook, 'resource': six.text_type(self)})
-        self._add_event(self.action, self.status,
-                        "Hook %s is cleared" % hook)
+        hook_data = {'hook': hook, 'suffix': 'end'}
+        self._send_notification_and_add_event(
+            self.action, self.status, "Hook %s is cleared" % hook,
+            notfcn_type='hook', data=hook_data)
 
     def _handle_signal(self, details):
         if not callable(getattr(self, 'handle_signal', None)):
@@ -1696,7 +1708,9 @@ class Resource(object):
                 reason_string = "Signal: %s" % signal_result
             else:
                 reason_string = get_string_details()
-            self._add_event('SIGNAL', self.status, reason_string)
+            self._send_notification_and_add_event(
+                'SIGNAL', self.status, reason_string,
+                notfcn_type='signal', data=details)
         except exception.NoActionRequired:
             # Don't log an event as it just spams the user.
             pass
@@ -1713,7 +1727,7 @@ class Resource(object):
         signal. The base-class raise an exception if no handler is implemented.
         """
         if need_check:
-            self._signal_check_action()
+            self._signal_check_action(details)
             self._signal_check_hook(details)
         if details and 'unset_hook' in details:
             self._unset_hook(details)

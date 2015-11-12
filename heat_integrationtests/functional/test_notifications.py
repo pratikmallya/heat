@@ -29,7 +29,17 @@ BASIC_NOTIFICATIONS = [
     'orchestration.stack.resume.start',
     'orchestration.stack.resume.end',
     'orchestration.stack.delete.start',
-    'orchestration.stack.delete.end'
+    'orchestration.stack.delete.end',
+    'orchestration.resource.create.start',
+    'orchestration.resource.create.end',
+    'orchestration.resource.update.start',
+    'orchestration.resource.update.end',
+    'orchestration.resource.suspend.start',
+    'orchestration.resource.suspend.end',
+    'orchestration.resource.resume.start',
+    'orchestration.resource.resume.end',
+    'orchestration.resource.delete.start',
+    'orchestration.resource.delete.end'
 ]
 
 ASG_NOTIFICATIONS = [
@@ -54,7 +64,7 @@ class NotificationHandler(object):
 
     def process_message(self, body, message):
         notification = common.deserialize_msg(body)
-        if notification['payload']['stack_name'] == self.stack_id:
+        if notification['payload']['stack_identity'] == self.stack_id:
             if self.events is not None:
                 if notification['event_type'] in self.events:
                     self.notifications.append(notification['event_type'])
@@ -77,6 +87,13 @@ heat_template_version: 2013-05-23
 resources:
   random1:
     type: OS::Heat::RandomString
+  test1:
+    type: OS::Heat::TestResource
+    properties:
+      value: Test1
+      fail: False
+      update_replace: False
+      wait_secs: 0
 '''
     update_basic_template = '''
 heat_template_version: 2013-05-23
@@ -85,6 +102,13 @@ resources:
     type: OS::Heat::RandomString
   random2:
     type: OS::Heat::RandomString
+  test1:
+    type: OS::Heat::TestResource
+    properties:
+      value: Test2
+      fail: False
+      update_replace: False
+      wait_secs: 0
 '''
 
     asg_template = '''
@@ -148,7 +172,7 @@ outputs:
         self.stack_resume(stack_identifier)
         self._stack_delete(stack_identifier)
 
-        handler = NotificationHandler(stack_identifier.split('/')[0])
+        handler = NotificationHandler(stack_identifier.split('/')[1])
 
         with self.conn.Consumer(self.queue,
                                 callbacks=[handler.process_message],
@@ -172,7 +196,7 @@ outputs:
                 scale_up_url = output['output_value']
 
         notifications = []
-        handler = NotificationHandler(stack_identifier.split('/')[0],
+        handler = NotificationHandler(stack_identifier.split('/')[1],
                                       ASG_NOTIFICATIONS)
 
         with self.conn.Consumer(self.queue,

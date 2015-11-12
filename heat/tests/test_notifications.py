@@ -36,6 +36,7 @@ class StackTest(common.HeatTestCase):
         st.created_time = created_time
         st.context = self.ctx
         st.id = 'hay-are-en'
+        st.root_stack_id.return_value = 'root stack id'
 
         notify = self.patchobject(notification, 'notify')
 
@@ -48,6 +49,7 @@ class StackTest(common.HeatTestCase):
              'user_identity': 'test_user_id',
              'stack_identity': 'hay-are-en',
              'stack_name': 'fred',
+             'root_stack_id': 'root stack id',
              'tenant_id': 'test_tenant_id',
              'create_at': created_time.isoformat(),
              'state': 'x_f'})
@@ -69,6 +71,7 @@ class AutoScaleTest(common.HeatTestCase):
         st.created_time = created_time
         st.context = self.ctx
         st.id = 'hay-are-en'
+        st.root_stack_id.return_value = 'root stack id'
 
         notify = self.patchobject(notification, 'notify')
 
@@ -86,6 +89,7 @@ class AutoScaleTest(common.HeatTestCase):
              'user_identity': 'test_user_id',
              'stack_identity': 'hay-are-en',
              'stack_name': 'fred',
+             'root_stack_id': 'root stack id',
              'tenant_id': 'test_tenant_id',
              'create_at': created_time.isoformat(),
              'state': 'x_f', 'adjustment_type': 'y',
@@ -103,6 +107,7 @@ class AutoScaleTest(common.HeatTestCase):
         st.created_time = created_time
         st.context = self.ctx
         st.id = 'hay-are-en'
+        st.root_stack_id.return_value = 'root stack id'
 
         notify = self.patchobject(notification, 'notify')
 
@@ -119,8 +124,115 @@ class AutoScaleTest(common.HeatTestCase):
              'user_identity': 'test_user_id',
              'stack_identity': 'hay-are-en',
              'stack_name': 'fred',
+             'root_stack_id': 'root stack id',
              'tenant_id': 'test_tenant_id',
              'create_at': created_time.isoformat(),
              'state': 'x_f', 'adjustment_type': 'y',
              'groupname': 'c', 'capacity': '5',
              'message': 'error', 'adjustment': 'x'})
+
+
+class ResourceTest(common.HeatTestCase):
+
+    def setUp(self):
+        super(ResourceTest, self).setUp()
+        self.ctx = utils.dummy_context(user_id='test_user_id')
+
+    def test_send(self):
+        created_time = timeutils.utcnow()
+        reason = 'some reason'
+        res = mock.Mock()
+        res.context = self.ctx
+        res.stack.id = 'stack_id'
+        res.status = 'x'
+        res.action = 'f'
+        res.state = ('x', 'f')
+        res.name = 'fred'
+        res.type.return_value = 'resource type'
+        res.status_reason = 'this is why'
+        res.created_time = created_time
+        res.id = 'hay-are-en'
+        res.root_stack_id = 'root stack id'
+
+        notify = self.patchobject(notification, 'notify')
+
+        notification.resource.send(res, reason, notfcn_type='resource')
+        notify.assert_called_once_with(
+            self.ctx, 'resource.f.error', 'ERROR', {
+                'tenant_id': 'test_tenant_id',
+                'user_id': 'test_user_id',
+                'username': 'test_username',
+                'stack_identity': 'stack_id',
+                'root_stack_id': 'root stack id',
+                'create_at': created_time.isoformat(),
+                'resource_type': 'resource type',
+                'resource_name': 'fred',
+                'resource_identity': 'hay-are-en',
+                'state': 'x_f',
+                'resource_status_reason': 'this is why',
+                'notification_reason': 'some reason',
+            })
+
+    def test_send_hook(self):
+        res = mock.Mock()
+        reason = 'some reason'
+        res.context = self.ctx
+        res.stack.id = 'stack_id'
+        res.root_stack_id = 'root stack id'
+        res.status = 'x'
+        res.action = 'f'
+        res.state = ('x', 'f')
+        res.name = 'fred'
+        res.type.return_value = 'resource type'
+        res.id = 'hay-are-en'
+        hook_data = {'hook': 'hookem', 'suffix': 'start'}
+        notify = self.patchobject(notification, 'notify')
+
+        notification.resource.send(res, reason, notfcn_type='hook',
+                                   data=hook_data)
+        notify.assert_called_once_with(
+            self.ctx, 'resource.hook.start', 'INFO', {
+                'tenant_id': 'test_tenant_id',
+                'user_id': 'test_user_id',
+                'username': 'test_username',
+                'stack_identity': 'stack_id',
+                'root_stack_id': 'root stack id',
+                'resource_type': 'resource type',
+                'resource_name': 'fred',
+                'resource_identity': 'hay-are-en',
+                'state': 'x_f',
+                'hook': 'hookem',
+                'notification_reason': 'some reason',
+            })
+
+    def test_send_signal(self):
+        res = mock.Mock()
+        reason = 'some reason'
+        res.context = self.ctx
+        res.stack.id = 'stack_id'
+        res.root_stack_id = 'root stack id'
+        res.state = ('x', 'f')
+        res.status = 'x'
+        res.action = 'f'
+        res.name = 'fred'
+        res.type.return_value = 'resource type'
+        res.id = 'hay-are-en'
+
+        notify = self.patchobject(notification, 'notify')
+
+        notification.resource.send(res, reason, notfcn_type='signal',
+                                   data='some signal')
+        notify.assert_called_once_with(
+            self.ctx, 'resource.signal', 'INFO', {
+                'tenant_id': 'test_tenant_id',
+                'user_id': 'test_user_id',
+                'username': 'test_username',
+                'stack_identity': 'stack_id',
+                'root_stack_id': 'root stack id',
+                'resource_type': 'resource type',
+                'resource_name': 'fred',
+                'resource_identity': 'hay-are-en',
+                'state': 'x_f',
+                'signal': 'some signal',
+                'notification_reason': 'some reason',
+            })

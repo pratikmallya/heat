@@ -369,28 +369,76 @@ def format_event(event):
     return result
 
 
-def format_notification_body(stack):
+def common_notification_parameters(notify_object):
+    """Extract the parameters common to all notifications."""
+    if notify_object.status is not None and notify_object.action is not None:
+        state = '_'.join(notify_object.state)
+    else:
+        state = 'Unknown'
+    result = {
+        rpc_api.NOTIFY_TENANT_ID: notify_object.context.tenant_id,
+        rpc_api.NOTIFY_USERNAME: notify_object.context.user,
+        rpc_api.NOTIFY_STATE: state,
+    }
+    return result
+
+
+def format_stack_notification_body(stack):
     # some other possibilities here are:
     # - template name
     # - template size
     # - resource count
-    if stack.status is not None and stack.action is not None:
-        state = '_'.join(stack.state)
-    else:
-        state = 'Unknown'
-    result = {
-        rpc_api.NOTIFY_TENANT_ID: stack.context.tenant_id,
-        rpc_api.NOTIFY_USER_ID: stack.context.user,
-        # deprecated: please use rpc_api.NOTIFY_USERID for user id or
-        # rpc_api.NOTIFY_USERNAME for user name.
-        rpc_api.NOTIFY_USERID: stack.context.user_id,
-        rpc_api.NOTIFY_USERNAME: stack.context.user,
-        rpc_api.NOTIFY_STACK_ID: stack.id,
+    result = common_notification_parameters(stack)
+    result.update({
+        rpc_api.NOTIFY_ROOT_STACK_ID: stack.root_stack_id(),
         rpc_api.NOTIFY_STACK_NAME: stack.name,
-        rpc_api.NOTIFY_STATE: state,
+        rpc_api.NOTIFY_USER_ID: stack.context.user,
+        rpc_api.NOTIFY_USERID: stack.context.user_id,
+        rpc_api.NOTIFY_STACK_ID: stack.id,
         rpc_api.NOTIFY_STATE_REASON: stack.status_reason,
         rpc_api.NOTIFY_CREATE_AT: stack.created_time.isoformat(),
-    }
+    })
+    LOG.warning(_LE("please use rpc_api.NOTIFY_USERID for user id or "
+                    "rpc_api.NOTIFY_USERNAME for user name."))
+    return result
+
+
+def common_resource_notification_parameters(resource, reason):
+    result = common_notification_parameters(resource)
+    result.update({
+        rpc_api.NOTIFY_USER_ID: resource.context.user_id,
+        rpc_api.NOTIFY_ROOT_STACK_ID: resource.root_stack_id,
+        rpc_api.NOTIFY_STACK_ID: resource.stack.id,
+        rpc_api.NOTIFY_RES_TYPE: resource.type(),
+        rpc_api.NOTIFY_RES_NAME: resource.name,
+        rpc_api.NOTIFY_RES_ID: resource.id,
+        rpc_api.NOTIFY_REASON: reason,
+    })
+    return result
+
+
+def format_resource_notification_body(resource, reason):
+    result = common_resource_notification_parameters(resource, reason)
+    result.update({
+        rpc_api.NOTIFY_RES_STATUS_REASON: resource.status_reason,
+        rpc_api.NOTIFY_CREATE_AT: resource.created_time.isoformat(),
+    })
+    return result
+
+
+def format_resource_hook_notification_body(resource, reason, hook):
+    result = common_resource_notification_parameters(resource, reason)
+    result.update({
+        rpc_api.NOTIFY_HOOK: hook,
+    })
+    return result
+
+
+def format_resource_signal_notification_body(resource, reason, signal):
+    result = common_resource_notification_parameters(resource, reason)
+    result.update({
+        rpc_api.NOTIFY_SIGNAL: signal,
+    })
     return result
 
 
