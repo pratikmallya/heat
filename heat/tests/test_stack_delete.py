@@ -268,6 +268,7 @@ class StackTest(common.HeatTestCase):
 
         self.stack = stack.Stack(self.ctx, 'delete_trust_nested', self.tmpl,
                                  owner_id='owner123')
+        self.patchobject(self.stack, '_send_notification_and_add_event')
         stack_id = self.stack.store()
 
         db_s = stack_object.Stack.get_by_id(self.ctx, stack_id)

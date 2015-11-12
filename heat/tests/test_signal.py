@@ -519,7 +519,8 @@ class SignalTest(common.HeatTestCase):
         rsrc.signal(details=test_d)
         mock_handle.assert_called_once_with(test_d)
 
-    @mock.patch.object(generic_resource.SignalResource, '_add_event')
+    @mock.patch.object(generic_resource.SignalResource,
+                       '_send_notification_and_add_event')
     @mock.patch.object(generic_resource.SignalResource, 'handle_signal')
     def test_signal_no_action(self, mock_handle, mock_add):
         # Setup
@@ -540,7 +541,8 @@ class SignalTest(common.HeatTestCase):
         mock_handle.assert_called_once_with(test_d)
         mock_add.assert_not_called()
 
-    @mock.patch.object(generic_resource.SignalResource, '_add_event')
+    @mock.patch.object(generic_resource.SignalResource,
+                       '_send_notification_and_add_event')
     def test_signal_different_reason_types(self, mock_add):
         # Setup
         stack = self._create_stack(TEMPLATE_CFN_SIGNAL)
@@ -570,13 +572,22 @@ class SignalTest(common.HeatTestCase):
             rsrc.signal(details=test_d)
 
         # Verify
-        mock_add.assert_any_call('SIGNAL', 'COMPLETE', ceilo_expected)
-        mock_add.assert_any_call('SIGNAL', 'COMPLETE', watch_expected)
-        mock_add.assert_any_call('SIGNAL', 'COMPLETE', str_expected)
-        mock_add.assert_any_call('SIGNAL', 'COMPLETE', none_expected)
+        mock_add.assert_any_call(
+            'SIGNAL', 'COMPLETE', ceilo_expected, notfcn_type='signal',
+            data=ceilo_details)
+        mock_add.assert_any_call(
+            'SIGNAL', 'COMPLETE', watch_expected, notfcn_type='signal',
+            data=watch_details)
+        mock_add.assert_any_call(
+            'SIGNAL', 'COMPLETE', str_expected, notfcn_type='signal',
+            data=str_details)
+        mock_add.assert_any_call(
+            'SIGNAL', 'COMPLETE', none_expected, notfcn_type='signal',
+            data=none_details)
 
     @mock.patch.object(generic_resource.SignalResource, 'handle_signal')
-    @mock.patch.object(generic_resource.SignalResource, '_add_event')
+    @mock.patch.object(generic_resource.SignalResource,
+                       '_send_notification_and_add_event')
     def test_signal_plugin_reason(self, mock_add, mock_handle):
         # Setup
         stack = self._create_stack(TEMPLATE_CFN_SIGNAL)
@@ -595,8 +606,9 @@ class SignalTest(common.HeatTestCase):
         mock_handle.assert_called_once_with(signal_details)
 
         # Ensure if handle_signal returns data, we use it as the reason
-        mock_add.assert_any_call('SIGNAL', 'COMPLETE',
-                                 'Signal: %s' % ret_expected)
+        mock_add.assert_any_call(
+            'SIGNAL', 'COMPLETE', 'Signal: %s' % ret_expected,
+            notfcn_type='signal', data=signal_details)
 
     def test_signal_wrong_resource(self):
         # Setup

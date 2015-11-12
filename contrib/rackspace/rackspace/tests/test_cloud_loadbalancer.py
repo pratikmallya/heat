@@ -775,7 +775,7 @@ class LoadBalancerTest(common.HeatTestCase):
         stack.has_cache_data.return_value = False
         resdef = mock.Mock(spec=rsrc_defn.ResourceDefinition)
         loadbalancer = lb.CloudLoadBalancer("test", resdef, stack)
-        loadbalancer._add_event = mock.Mock()
+        loadbalancer._send_notification_and_add_event = mock.Mock()
         mock_cloud_lb = mock.Mock()
         mock_get = mock.Mock(return_value=mock_cloud_lb)
         loadbalancer.clb.get = mock_get

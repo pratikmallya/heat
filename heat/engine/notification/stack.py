@@ -36,4 +36,4 @@ def send(stack):
                                suffix)
 
     notification.notify(stack.context, event_type, level,
-                        engine_api.format_notification_body(stack))
+                        engine_api.format_stack_notification_body(stack))

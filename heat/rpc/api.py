@@ -99,14 +99,15 @@ EVENT_KEYS = (
     'resource_properties',
 )
 
-NOTIFY_KEYS = (
+NOTIFY_KEYS_COMMON = (
     NOTIFY_TENANT_ID,
     NOTIFY_USER_ID,
     NOTIFY_USERID,
     NOTIFY_USERNAME,
     NOTIFY_STACK_ID,
-    NOTIFY_STACK_NAME,
+    NOTIFY_ROOT_STACK_ID,
     NOTIFY_STATE,
+    NOTIFY_STACK_NAME,
     NOTIFY_STATE_REASON,
     NOTIFY_CREATE_AT,
 ) = (
@@ -115,10 +116,35 @@ NOTIFY_KEYS = (
     'user_identity',
     'username',
     STACK_ID,
-    STACK_NAME,
+    'root_stack_id',
     'state',
+    STACK_NAME,
     'state_reason',
     'create_at',
+)
+
+NOTIFY_KEYS_RESOURCE = (
+    NOTIFY_RES_TYPE,
+    NOTIFY_RES_ID,
+    NOTIFY_RES_NAME,
+    NOTIFY_RES_ACTION,
+    NOTIFY_RES_STATUS,
+    NOTIFY_RES_PROPERTIES,
+    NOTIFY_RES_STATUS_REASON,
+    NOTIFY_SIGNAL,
+    NOTIFY_HOOK,
+    NOTIFY_REASON,
+) = (
+    RES_TYPE,
+    RES_ID,
+    RES_NAME,
+    RES_ACTION,
+    RES_STATUS,
+    RES_SCHEMA_PROPERTIES,
+    RES_STATUS_DATA,
+    'signal',
+    'hook',
+    'notification_reason',
 )
 
 # This is the representation of a watch we expose to the API via RPC

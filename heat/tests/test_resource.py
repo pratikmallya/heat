@@ -20,6 +20,7 @@ import uuid
 
 import mock
 from oslo_config import cfg
+from oslo_utils import timeutils as oslo_timeutils
 import six
 
 from heat.common import exception
@@ -33,6 +34,8 @@ from heat.engine import clients
 from heat.engine import constraints
 from heat.engine import dependencies
 from heat.engine import environment
+from heat.engine import event
+from heat.engine.notification import resource as notification
 from heat.engine import properties
 from heat.engine import resource
 from heat.engine import resources
@@ -200,14 +203,15 @@ class ResourceTest(common.HeatTestCase):
         for action in actions:
             for status in res.STATUSES:
                 res.state_set(action, status)
-                ev = self.patchobject(res, '_add_event')
+                ev = self.patchobject(res, '_send_notification_and_add_event')
                 ex = self.assertRaises(exception.NotSupported,
                                        res.signal)
                 self.assertEqual('Signal resource during %s is not '
                                  'supported.' % action, six.text_type(ex))
                 ev.assert_called_with(
                     action, status,
-                    'Cannot signal resource during %s' % action)
+                    'Cannot signal resource during %s' % action,
+                    data=None, notfcn_type='signal')
 
     def test_resource_str_repr_stack_id_resource_id(self):
         tmpl = rsrc_defn.ResourceDefinition('test_res_str_repr', 'Foo')
@@ -685,7 +689,7 @@ class ResourceTest(common.HeatTestCase):
         rname = 'test_resource'
         tmpl = rsrc_defn.ResourceDefinition(rname, 'Foo', {})
         res = generic_rsrc.ResourceWithRequiredProps(rname, tmpl, self.stack)
-
+        self.patchobject(res, '_send_notification_and_add_event')
         estr = ('Property error: test_resource.Properties: '
                 'Property Foo not assigned')
         create = scheduler.TaskRunner(res.create)
@@ -3016,6 +3020,7 @@ class ResourceHookTest(common.HeatTestCase):
         snippet = rsrc_defn.ResourceDefinition('res',
                                                'GenericResourceType')
         res = resource.Resource('res', snippet, self.stack)
+        self.patchobject(res, '_send_notification_and_add_event')
         res.id = '1234'
         task = scheduler.TaskRunner(res.create)
         task.start()
@@ -3033,6 +3038,7 @@ class ResourceHookTest(common.HeatTestCase):
         res = resource.Resource('res', snippet, self.stack)
         res.id = '1234'
         res.action = 'CREATE'
+        res.created_time = oslo_timeutils.utcnow()
         self.stack.action = 'DELETE'
         task = scheduler.TaskRunner(res.delete)
         task.start()
@@ -3389,3 +3395,89 @@ class ResourceAvailabilityTest(common.HeatTestCase):
 
         self.assertIsNone(res.handle_delete())
         self.assertEqual(0, delete.call_count)
+
+
+class ResourceNotificationsTest(common.HeatTestCase):
+
+    def setUp(self):
+        super(ResourceNotificationsTest, self).setUp()
+        self.stack = parser.Stack(utils.dummy_context(), 'test_stack',
+                                  template.Template(empty_template),
+                                  stack_id=str(uuid.uuid4()))
+
+    @mock.patch.object(event, 'Event')
+    @mock.patch.object(notification, 'send')
+    def test_notification_actions(self, mock_send, mock_event):
+        ACTIONS = ['CREATE', 'DELETE', 'UPDATE', 'SUSPEND', 'RESUME']
+        STATUSES = ['IN_PROGRESS', 'FAILED', 'COMPLETE']
+        snippet = rsrc_defn.ResourceDefinition('res',
+                                               'GenericResourceType')
+        res = resource.Resource('res', snippet, self.stack)
+
+        for action in ACTIONS:
+            for status in STATUSES:
+                res.state_set(action, status)
+                mock_send.assert_called_with(
+                    res, 'state changed', notfcn_type='resource', data=None)
+
+    @mock.patch.object(event, 'Event')
+    @mock.patch.object(notification, 'send')
+    def test_notification_unset_hook(self, mock_send, mock_event):
+        snippet = rsrc_defn.ResourceDefinition('res',
+                                               'GenericResourceType')
+
+        res = resource.Resource('res', snippet, self.stack)
+        self.patchobject(res, 'clear_hook')
+        res.signal(details={'unset_hook': 'hookem'}, need_check=False)
+        reason = "Hook hookem is cleared"
+        hook_data = {'hook': 'hookem', 'suffix': 'end'}
+        mock_send.assert_called_with(
+            res, reason, notfcn_type='hook', data=hook_data)
+
+    @mock.patch.object(event, 'Event')
+    @mock.patch.object(notification, 'send')
+    def test_notification_signal(self, mock_send, mock_event):
+        snippet = rsrc_defn.ResourceDefinition('res',
+                                               'GenericResourceType')
+        res = resource.Resource('res', snippet, self.stack)
+        res.handle_signal = mock.Mock(return_value='reason string 1')
+        res.signal('some deets', need_check=False)
+        mock_send.assert_called_with(
+            res, 'Signal: reason string 1', notfcn_type='signal',
+            data='some deets')
+
+    @mock.patch.object(event, 'Event')
+    @mock.patch.object(notification, 'send')
+    def test_notification_signal_wrong_action_state(self, mock_send,
+                                                    mock_event):
+        snippet = rsrc_defn.ResourceDefinition('res',
+                                               'GenericResourceType')
+        res = resource.Resource('res', snippet, self.stack)
+        actions = [res.SUSPEND, res.DELETE]
+        for action in actions:
+            for status in res.STATUSES:
+                res.state_set(action, status)
+                ex = self.assertRaises(exception.NotSupported,
+                                       res.signal, 'some deets')
+                reason = _('Cannot signal resource during %s') % action
+                self.assertEqual('Signal resource during %s is not '
+                                 'supported.' % action, six.text_type(ex))
+                mock_send.assert_called_with(
+                    res, reason, notfcn_type='signal', data='some deets')
+
+    @mock.patch.object(event, 'Event')
+    @mock.patch.object(notification, 'send')
+    def test_notification_hook_set(self, mock_send, mock_event):
+        self.stack.env.registry.load(
+            {'resources': {'res': {'hooks': 'pre-create'}}})
+        snippet = rsrc_defn.ResourceDefinition('res',
+                                               'GenericResourceType')
+        res = resource.Resource('res', snippet, self.stack)
+        res.id = '1234'
+        task = scheduler.TaskRunner(res.create)
+        task.start()
+        task.step()
+        reason = _("CREATE paused until Hook pre-create is cleared")
+        hook_data = {'hook': 'pre-create', 'suffix': 'start'}
+        mock_send.assert_called_with(
+            res, reason, notfcn_type='hook', data=hook_data)
