@@ -602,10 +602,11 @@ def stack_lock_release(stack_id, engine_id):
 
 def stack_get_root_id(context, stack_id):
     s = stack_get(context, stack_id)
+    if not s:
+        return None
     while s.owner_id:
         s = stack_get(context, s.owner_id)
     return s.id
-
 
 def stack_count_total_resources(context, stack_id):
     # count all resources which belong to the root stack
