@@ -55,6 +55,26 @@ class CloudServer(server.Server):
     RC_STATUS_FAILED = 'FAILED'
     RC_STATUS_UNPROCESSABLE = 'UNPROCESSABLE'
 
+    # Nova Extra specs
+    FLAVOR_EXTRA_SPECS = 'OS-FLV-WITH-EXT-SPECS:extra_specs'
+    FLAVOR_CLASSES_KEY = 'flavor_classes'
+    FLAVOR_ACCEPT_ANY = '*'
+    FLAVOR_CLASS = 'class'
+    DISK_IO_INDEX = 'disk_io_index'
+    FLAVOR_CLASSES = (
+        GENERAL1, MEMORY1, PERFORMANCE2, PERFORMANCE1, STANDARD1, IO1,
+        ONMETAL, COMPUTE1
+    ) = (
+        'general1', 'memory1', 'performance2', 'performance1',
+        'standard1', 'io1', 'onmetal', 'compute1',
+    )
+
+    # flavor classes that can be booted ONLY from volume
+    BFV_VOLUME_REQUIRED = {MEMORY1, COMPUTE1}
+
+    # flavor classes that can NOT be booted from volume
+    NON_BFV = {STANDARD1, ONMETAL}
+
     properties_schema = copy.deepcopy(server.Server.properties_schema)
     properties_schema.update(
         {
@@ -199,6 +219,74 @@ class CloudServer(server.Server):
                 address['port'] = get_port(net_name, address['addr'])
 
         return self._extend_networks(nets)
+
+    def _image_flavor_class_match(self, flavor_type, image):
+        flavor_class_string = image.get(self.FLAVOR_CLASSES_KEY, '')
+        flavor_class_excluded = "!{0}".format(flavor_type)
+        flavor_classes_accepted = flavor_class_string.split(',')
+
+        if flavor_type in flavor_classes_accepted:
+            return True
+
+        if self.FLAVOR_ACCEPT_ANY in flavor_classes_accepted:
+            if flavor_class_excluded not in flavor_classes_accepted:
+                return True
+
+        return False
+
+    def validate(self):
+        """Validate for Rackspace Cloud specific parameters"""
+        super(CloudServer, self).validate()
+
+        # check if image, flavor combination is valid
+        flavor = self.client_plugin().get_flavor(self.properties[self.FLAVOR])
+        fl_xtra_specs = flavor.to_dict().get(self.FLAVOR_EXTRA_SPECS, {})
+        flavor_type = fl_xtra_specs.get(self.FLAVOR_CLASS, None)
+
+        image = self.client_plugin('glance').get_image(
+            self.properties.get(self.IMAGE))
+
+        if not image:
+            if flavor_type in self.NON_BFV:
+                msg = _('Flavor %s cannot be booted from volume.') % (
+                    self.properties[self.FLAVOR])
+                raise exception.StackValidationFailed(message=msg)
+            else:
+                # we cannot determine details of the attached volume, so this
+                # is all the validation possible
+                return
+
+        if flavor_type in self.BFV_VOLUME_REQUIRED:
+            msg = _('Flavor %(flavor)s must be booted from volume, '
+                    'but image %(image)s was also specified.') % {
+                'flavor': self.properties[self.FLAVOR],
+                'image': self.properties[self.IMAGE]}
+            raise exception.StackValidationFailed(message=msg)
+
+        if not self._image_flavor_class_match(flavor_type, image):
+            msg = _('Flavor %(flavor)s cannot be used with image '
+                    '%(image)s.') % {
+                'image': self.properties[self.IMAGE],
+                'flavor': self.properties[self.FLAVOR]}
+            raise exception.StackValidationFailed(message=msg)
+
+        # not bfv server
+        if (fl_xtra_specs.get(self.DISK_IO_INDEX) != '-1'):
+
+            if image.size <= 0:
+                msg = _('Image %s has size <= 0') % (
+                    self.properties[self.IMAGE])
+                raise exception.StackValidationFailed(message=msg)
+
+            if flavor.disk < image.min_disk:
+                msg = _('Image %(image)s requires %(imsz)s GB minimum '
+                        'disk space. Flavor %(flavor)s has only '
+                        '%(flsz)s GB.') % {
+                    'image': self.properties[self.IMAGE],
+                    'imsz': image.min_disk,
+                    'flavor': self.properties[self.FLAVOR],
+                    'flsz': flavor.disk}
+                raise exception.StackValidationFailed(message=msg)
 
 
 def resource_mapping():

@@ -76,6 +76,10 @@ class GlanceClientPlugin(client_plugin.ClientPlugin):
             image_id = self.get_image_id_by_name(image_identifier)
         return image_id
 
+    def get_image(self, image):
+        if image:
+            return self.client().images.get(self.get_image_id(image))
+
     def get_image_id_by_name(self, image_identifier):
         """Return the ID for the specified image name.
 

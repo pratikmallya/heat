@@ -118,9 +118,11 @@ class Server(stack_user.StackUser, sh.SchedulerHintsMixin,
     ATTRIBUTES = (
         NAME_ATTR, ADDRESSES, NETWORKS_ATTR, FIRST_ADDRESS,
         INSTANCE_NAME, ACCESSIPV4, ACCESSIPV6, CONSOLE_URLS,
+        IMAGE_STATUS_ACTIVE,
     ) = (
         'name', 'addresses', 'networks', 'first_address',
         'instance_name', 'accessIPv4', 'accessIPv6', 'console_urls',
+        'active',
     )
 
     properties_schema = {
@@ -725,14 +727,11 @@ class Server(stack_user.StackUser, sh.SchedulerHintsMixin,
             instance_user=None,
             user_data_format=user_data_format)
 
-        flavor = self.properties[self.FLAVOR]
         availability_zone = self.properties[self.AVAILABILITY_ZONE]
 
-        image = self.properties[self.IMAGE]
-        if image:
-            image = self.client_plugin('glance').get_image_id(image)
-
-        flavor_id = self.client_plugin().get_flavor_id(flavor)
+        image = self.client_plugin('glance').get_image(
+            self.properties.get(self.IMAGE))
+        flavor = self.client_plugin().get_flavor(self.properties[self.FLAVOR])
 
         instance_meta = self.properties[self.METADATA]
         if instance_meta is not None:
@@ -757,8 +756,8 @@ class Server(stack_user.StackUser, sh.SchedulerHintsMixin,
         try:
             server = self.client().servers.create(
                 name=self._server_name(),
-                image=image,
-                flavor=flavor_id,
+                image=image.id,
+                flavor=flavor.id,
                 key_name=key_name,
                 security_groups=security_groups,
                 userdata=userdata,
@@ -968,10 +967,9 @@ class Server(stack_user.StackUser, sh.SchedulerHintsMixin,
                         break
 
     def _update_flavor(self, prop_diff):
-        flavor = prop_diff[self.FLAVOR]
-        flavor_id = self.client_plugin().get_flavor_id(flavor)
-        handler_args = {'args': (flavor_id,)}
-        checker_args = {'args': (flavor_id, flavor)}
+        flavor = self.client_plugin().get_flavor(prop_diff[self.FLAVOR])
+        handler_args = {'args': (flavor.id,)}
+        checker_args = {'args': (flavor.id, prop_diff[self.FLAVOR])}
 
         prg_resize = progress.ServerUpdateProgress(self.resource_id,
                                                    'resize',
@@ -985,8 +983,8 @@ class Server(stack_user.StackUser, sh.SchedulerHintsMixin,
         image_update_policy = (
             prop_diff.get(self.IMAGE_UPDATE_POLICY) or
             self.properties[self.IMAGE_UPDATE_POLICY])
-        image = prop_diff[self.IMAGE]
-        image_id = self.client_plugin('glance').get_image_id(image)
+        image = self.client_plugin('glance').get_image(
+            prop_diff[self.IMAGE])
         preserve_ephemeral = (
             image_update_policy == 'REBUILD_PRESERVE_EPHEMERAL')
         password = (prop_diff.get(self.ADMIN_PASS) or
@@ -995,7 +993,7 @@ class Server(stack_user.StackUser, sh.SchedulerHintsMixin,
                   'preserve_ephemeral': preserve_ephemeral}
         prg = progress.ServerUpdateProgress(self.resource_id,
                                             'rebuild',
-                                            handler_extra={'args': (image_id,),
+                                            handler_extra={'args': (image.id,),
                                                            'kwargs': kwargs})
         return prg
 
@@ -1235,10 +1233,28 @@ class Server(stack_user.StackUser, sh.SchedulerHintsMixin,
         bootable_vol = self._validate_block_device_mapping()
 
         # make sure the image exists if specified.
-        image = self.properties[self.IMAGE]
+        image = self.client_plugin('glance').get_image(
+            self.properties[self.IMAGE])
+
         if not image and not bootable_vol:
             msg = _('Neither image nor bootable volume is specified for'
                     ' instance %s') % self.name
+            raise exception.StackValidationFailed(message=msg)
+
+        # validate image properties
+        if image and image.status.lower() != self.IMAGE_STATUS_ACTIVE:
+            msg = _('Image status is required to be %(cstatus)s not '
+                    '%(wstatus)s.') % {
+                'cstatus': self.IMAGE_STATUS_ACTIVE,
+                'wstatus': image.status}
+            raise exception.StackValidationFailed(message=msg)
+
+        flavor = self.client_plugin().get_flavor(self.properties[self.FLAVOR])
+        if image and flavor.ram < image.min_ram:
+            msg = _('Image %(image)s requires %(imram)s minimum ram.'
+                    'Flavor %(flavor)s has only %(flram)s.') % {
+                'image': self.properties[self.IMAGE], 'imram': image.min_ram,
+                'flavor': self.properties[self.FLAVOR], 'flram': flavor.ram}
             raise exception.StackValidationFailed(message=msg)
 
         # network properties 'uuid' and 'network' shouldn't be used

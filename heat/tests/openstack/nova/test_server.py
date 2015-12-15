@@ -212,7 +212,7 @@ class ServersTest(common.HeatTestCase):
 
         self.patchobject(server, 'store_external_ports')
 
-        self._mock_get_image_id_success(image_id or 'CentOS 5.2', 1)
+        self._mock_get_image_success(image_id or 'CentOS 5.2', 1)
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
@@ -252,7 +252,7 @@ class ServersTest(common.HeatTestCase):
             image = image_id or 'CentOS 5.2'
             imageId = 1
 
-        self._mock_get_image_id_success(image, imageId)
+        self._mock_get_image_success(image, imageId)
 
     def _create_fake_iface(self, port, mac, ip):
         class fake_interface(object):
@@ -263,14 +263,21 @@ class ServersTest(common.HeatTestCase):
 
         return fake_interface(port, mac, ip)
 
-    def _mock_get_image_id_success(self, imageId_input, imageId):
-        self.m.StubOutWithMock(glance.GlanceClientPlugin, 'get_image_id')
-        glance.GlanceClientPlugin.get_image_id(
-            imageId_input).MultipleTimes().AndReturn(imageId)
+    def _mock_get_image_success(self, imageId_input, imageId):
+        self.m.StubOutWithMock(glance.GlanceClientPlugin, 'get_image')
+        mock_image = mock.Mock(id=imageId, status='active')
+        glance.GlanceClientPlugin.get_image(
+            imageId_input).MultipleTimes().AndReturn(mock_image)
+        self._mock_get_image_id(imageId_input)
 
-    def _mock_get_image_id_fail(self, image_id, exp):
+    # this method is required to satisfy image constraints
+    def _mock_get_image_id(self, imageID):
         self.m.StubOutWithMock(glance.GlanceClientPlugin, 'get_image_id')
-        glance.GlanceClientPlugin.get_image_id(image_id).AndRaise(exp)
+        glance.GlanceClientPlugin.get_image_id(imageID).AndReturn('image_id')
+
+    def _mock_get_image_fail(self, image_id, exp):
+        self.m.StubOutWithMock(glance.GlanceClientPlugin, 'get_image')
+        glance.GlanceClientPlugin.get_image(image_id).AndRaise(exp)
 
     def _mock_get_keypair_success(self, keypair_input, keypair):
         self.m.StubOutWithMock(nova.NovaClientPlugin, 'get_keypair')
@@ -280,7 +287,7 @@ class ServersTest(common.HeatTestCase):
     def _server_validate_mock(self, server):
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.stub_VolumeConstraint_validate()
 
     def test_subnet_dependency(self):
@@ -382,7 +389,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', image_id)
+        self._mock_get_image_success('F17-x86_64-gold', image_id)
         self.m.ReplayAll()
 
         scheduler.TaskRunner(server.create)()
@@ -447,10 +454,9 @@ class ServersTest(common.HeatTestCase):
         server = servers.Server('WebServer',
                                 resource_defns['WebServer'], stack)
 
-        self._mock_get_image_id_fail('Slackware',
-                                     exception.EntityNotFound(
-                                         entity='Image',
-                                         name='Slackware'))
+        self._mock_get_image_fail(
+            'Slackware', exception.EntityNotFound(
+                entity='Image', name='Slackware'))
         self.stub_FlavorConstraint_validate()
         self.stub_KeypairConstraint_validate()
         self.m.ReplayAll()
@@ -475,9 +481,9 @@ class ServersTest(common.HeatTestCase):
         server = servers.Server('WebServer',
                                 resource_defns['WebServer'], stack)
 
-        self._mock_get_image_id_fail('CentOS 5.2',
-                                     exception.PhysicalResourceNameAmbiguity(
-                                         name='CentOS 5.2'))
+        self._mock_get_image_fail(
+            'CentOS 5.2', exception.PhysicalResourceNameAmbiguity(
+                name='CentOS 5.2'))
         self.stub_FlavorConstraint_validate()
         self.stub_KeypairConstraint_validate()
         self.m.ReplayAll()
@@ -502,9 +508,35 @@ class ServersTest(common.HeatTestCase):
         server = servers.Server('WebServer',
                                 resource_defns['WebServer'], stack)
 
-        self._mock_get_image_id_fail('1',
-                                     exception.EntityNotFound(
-                                         entity='Image', name='1'))
+        self._mock_get_image_fail(
+            '1', exception.EntityNotFound(entity='Image', name='1'))
+        self.stub_KeypairConstraint_validate()
+        self.stub_FlavorConstraint_validate()
+        self.m.ReplayAll()
+
+        create = scheduler.TaskRunner(server.create)
+        error = self.assertRaises(exception.ResourceFailure, create)
+        self.assertEqual(
+            "StackValidationFailed: resources.WebServer: Property error: "
+            "WebServer.Properties.image: Error validating value '1': "
+            "The Image (1) could not be found.",
+            six.text_type(error))
+
+        self.m.VerifyAll()
+
+    def test_server_image_status_inactive(self):
+        stack_name = 'img_status_err'
+        (tmpl, stack) = self._setup_test_stack(stack_name)
+
+        # create an server with non exist image Id
+        resource_defns = tmpl.resource_definitions(stack)
+        server = servers.Server('WebServer',
+                                resource_defns['WebServer'], stack)
+        mock_image = mock.Mock(size=1, status='bad status')
+        self.m.StubOutWithMock(glance.GlanceClientPlugin, 'get_image')
+        glance.GlanceClientPlugin.get_image().MultipleTimes().AndReturn(
+            mock_image)
+
         self.stub_KeypairConstraint_validate()
         self.stub_FlavorConstraint_validate()
         self.m.ReplayAll()
@@ -578,7 +610,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 744)
+        self._mock_get_image_success('F17-x86_64-gold', 744)
 
         self.m.StubOutWithMock(self.fc.servers, 'create')
         self.fc.servers.create(
@@ -619,7 +651,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 744)
+        self._mock_get_image_success('F17-x86_64-gold', 744)
 
         self.m.StubOutWithMock(self.fc.servers, 'create')
         self.fc.servers.create(
@@ -659,7 +691,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 744)
+        self._mock_get_image_success('F17-x86_64-gold', 744)
 
         self.m.StubOutWithMock(self.fc.servers, 'create')
         self.fc.servers.create(
@@ -698,7 +730,7 @@ class ServersTest(common.HeatTestCase):
         self.m.StubOutWithMock(server, 'heat')
 
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 744)
+        self._mock_get_image_success('F17-x86_64-gold', 744)
 
         self.m.StubOutWithMock(self.fc.servers, 'create')
         self.fc.servers.create(
@@ -783,7 +815,7 @@ class ServersTest(common.HeatTestCase):
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
 
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 744)
+        self._mock_get_image_success('F17-x86_64-gold', 744)
 
         self.m.StubOutWithMock(self.fc.servers, 'create')
         self.fc.servers.create(
@@ -871,7 +903,7 @@ class ServersTest(common.HeatTestCase):
 
         swift.SwiftClientPlugin._create().AndReturn(sc)
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 744)
+        self._mock_get_image_success('F17-x86_64-gold', 744)
 
         self.m.StubOutWithMock(self.fc.servers, 'create')
         self.fc.servers.create(
@@ -962,7 +994,7 @@ class ServersTest(common.HeatTestCase):
         zcc.return_value = zc
         queue = mock.Mock()
         zc.queue.return_value = queue
-        self._mock_get_image_id_success('F17-x86_64-gold', 744)
+        self._mock_get_image_success('F17-x86_64-gold', 744)
 
         self.m.StubOutWithMock(self.fc.servers, 'create')
         self.fc.servers.create(
@@ -1044,7 +1076,7 @@ class ServersTest(common.HeatTestCase):
 
         mock_client.return_value = self.fc
         self.fc.servers.create = mock.Mock(return_value=return_server)
-        self._mock_get_image_id_success('F17-x86_64-gold', 744)
+        self._mock_get_image_success('F17-x86_64-gold', 744)
 
         scheduler.TaskRunner(server.create)()
         self.fc.servers.create(
@@ -1072,7 +1104,7 @@ class ServersTest(common.HeatTestCase):
 
         mock_client.return_value = self.fc
         self.fc.servers.create = mock.Mock(return_value=return_server)
-        self._mock_get_image_id_success('F17-x86_64-gold', 744)
+        self._mock_get_image_success('F17-x86_64-gold', 744)
 
         scheduler.TaskRunner(server.create)()
         self.fc.servers.create(
@@ -1104,7 +1136,7 @@ class ServersTest(common.HeatTestCase):
         stack.add_resource(server)
         self.assertIsNotNone(server.uuid)
 
-        self._mock_get_image_id_success('CentOS 5.2', 1)
+        self._mock_get_image_success('CentOS 5.2', 1)
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().MultipleTimes().AndReturn(self.fc)
@@ -1154,7 +1186,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('1', 1)
+        self._mock_get_image_success('1', 1)
 
         self.m.ReplayAll()
 
@@ -1322,7 +1354,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.stub_NetworkConstraint_validate()
         self.m.ReplayAll()
 
@@ -1342,7 +1374,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.stub_NetworkConstraint_validate()
         self.m.ReplayAll()
 
@@ -1367,7 +1399,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.stub_NetworkConstraint_validate()
         self.stub_PortConstraint_validate()
         self.m.ReplayAll()
@@ -1388,7 +1420,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.stub_NetworkConstraint_validate()
 
         self.m.ReplayAll()
@@ -1409,7 +1441,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.stub_NetworkConstraint_validate()
 
         self.m.ReplayAll()
@@ -1435,7 +1467,7 @@ class ServersTest(common.HeatTestCase):
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
 
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.stub_PortConstraint_validate()
         self.m.ReplayAll()
 
@@ -1796,7 +1828,7 @@ class ServersTest(common.HeatTestCase):
         self.m.StubOutWithMock(self.fc.servers, 'set_meta')
         self.fc.servers.set_meta(new_return_server,
                                  new_meta).AndReturn(None)
-        self._mock_get_image_id_success('CentOS 5.2', 1)
+        self._mock_get_image_success('CentOS 5.2', 1)
         self.m.ReplayAll()
         update_template = copy.deepcopy(server.t)
         update_template['Properties']['metadata'] = new_meta
@@ -1997,7 +2029,7 @@ class ServersTest(common.HeatTestCase):
         (tmpl, stack) = self._setup_test_stack(stack_name)
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
         self.patchobject(servers.Server, 'prepare_for_replace')
 
@@ -2017,7 +2049,7 @@ class ServersTest(common.HeatTestCase):
         (tmpl, stack) = self._setup_test_stack(stack_name)
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
 
         self.patchobject(servers.Server, 'prepare_for_replace')
@@ -2620,7 +2652,7 @@ class ServersTest(common.HeatTestCase):
                                 resource_defns['WebServer'], stack)
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.stub_VolumeConstraint_validate()
         self.stub_SnapshotConstraint_validate()
         self.m.ReplayAll()
@@ -2641,7 +2673,7 @@ class ServersTest(common.HeatTestCase):
                                 resource_defns['WebServer'], stack)
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
 
         ex = self.assertRaises(exception.StackValidationFailed,
@@ -2665,7 +2697,7 @@ class ServersTest(common.HeatTestCase):
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         self.stub_VolumeConstraint_validate()
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
 
         self.assertIsNone(server.validate())
@@ -2750,7 +2782,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_id('F17-x86_64-gold')
         self.stub_VolumeConstraint_validate()
         self.m.ReplayAll()
 
@@ -2774,7 +2806,7 @@ class ServersTest(common.HeatTestCase):
                                 resource_defns['WebServer'], stack)
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.stub_VolumeConstraint_validate()
         self.stub_SnapshotConstraint_validate()
         self.m.ReplayAll()
@@ -2794,7 +2826,7 @@ class ServersTest(common.HeatTestCase):
                                 resource_defns['WebServer'], stack)
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_id('F17-x86_64-gold')
         self.m.ReplayAll()
 
         exc = self.assertRaises(exception.StackValidationFailed,
@@ -2817,7 +2849,7 @@ class ServersTest(common.HeatTestCase):
                                 resource_defns['WebServer'], stack)
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.stub_VolumeConstraint_validate()
         self.m.ReplayAll()
 
@@ -2866,7 +2898,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
 
         ex = self.assertRaises(exception.StackValidationFailed,
@@ -2891,7 +2923,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
         self.assertIsNone(server.validate())
         self.m.VerifyAll()
@@ -2916,7 +2948,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
 
         exc = self.assertRaises(exception.StackValidationFailed,
@@ -2944,7 +2976,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
 
         self.assertIsNone(server.validate())
@@ -2965,7 +2997,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
 
         self.assertIsNone(server.validate())
@@ -2986,7 +3018,7 @@ class ServersTest(common.HeatTestCase):
 
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
 
         exc = self.assertRaises(exception.StackValidationFailed,
@@ -3678,7 +3710,7 @@ class ServersTest(common.HeatTestCase):
         self.m.StubOutWithMock(nova.NovaClientPlugin, 'absolute_limits')
         self.m.StubOutWithMock(nova.NovaClientPlugin, '_create')
         nova.NovaClientPlugin._create().AndReturn(self.fc)
-        self._mock_get_image_id_success('F17-x86_64-gold', 'image_id')
+        self._mock_get_image_success('F17-x86_64-gold', 'image_id')
         self.m.ReplayAll()
 
         # Assert here checks that server resource validates, but actually
@@ -3716,11 +3748,14 @@ class ServersTest(common.HeatTestCase):
         self.m.StubOutWithMock(self.fc.servers, 'get')
         self.fc.servers.get(return_server.id).AndReturn(return_server)
 
-        self.m.StubOutWithMock(glance.GlanceClientPlugin, 'get_image_id')
-        glance.GlanceClientPlugin.get_image_id(
-            'F17-x86_64-gold').MultipleTimes().AndReturn(744)
-        glance.GlanceClientPlugin.get_image_id(
-            'CentOS 5.2').MultipleTimes().AndReturn(1)
+        self.m.StubOutWithMock(glance.GlanceClientPlugin, 'get_image')
+
+        glance.GlanceClientPlugin.get_image(
+            'F17-x86_64-gold').MultipleTimes().AndReturn(
+                mock.Mock(id=744))
+        glance.GlanceClientPlugin.get_image(
+            'CentOS 5.2').MultipleTimes().AndReturn(
+                mock.Mock(id=1))
 
         self.patchobject(neutron.NeutronClientPlugin, 'resolve_network',
                          return_value='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -3764,8 +3799,8 @@ class ServersTest(common.HeatTestCase):
         mock_plugin = self.patchobject(nova.NovaClientPlugin, '_create')
         mock_plugin.return_value = self.fc
 
-        get_image = self.patchobject(glance.GlanceClientPlugin, 'get_image_id')
-        get_image.return_value = 744
+        get_image = self.patchobject(glance.GlanceClientPlugin, 'get_image')
+        get_image.return_value = mock.Mock(id=744)
 
         return_server = self.fc.servers.list()[1]
         return_server.id = '1234'
@@ -3809,8 +3844,8 @@ class ServersTest(common.HeatTestCase):
         mock_plugin = self.patchobject(nova.NovaClientPlugin, '_create')
         mock_plugin.return_value = self.fc
 
-        get_image = self.patchobject(glance.GlanceClientPlugin, 'get_image_id')
-        get_image.return_value = 744
+        get_image = self.patchobject(glance.GlanceClientPlugin, 'get_image')
+        get_image.return_value = mock.Mock(id=744)
 
         return_server = self.fc.servers.list()[1]
         return_server.id = '1234'
@@ -4436,3 +4471,23 @@ class ServerInternalPortTest(common.HeatTestCase):
 
         server.store_external_ports()
         self.assertEqual(0, update_data.call_count)
+
+"""
+
+    def test_validate_image_status_not_active(self, mock_client, mock_plugin):
+        server = cloud_server.CloudServer("test", self.rsrcdef, self.mockstack)
+
+        mock_plugin().get_image.return_value = mock.Mock(size=1,
+                                                         status='bad status')
+
+        self.assertRaises(exception.StackValidationFailed, server.validate)
+
+    def test_validate_image_insufficient_ram(self, mock_client, mock_plugin):
+        server = cloud_server.CloudServer("test", self.rsrcdef, self.mockstack)
+
+        mock_plugin().get_flavor.return_value = mock.Mock(ram=1)
+        mock_plugin().get_image.return_value = mock.Mock(
+            size=1, status='ACTIVE', min_ram=4)
+
+        self.assertRaises(exception.StackValidationFailed, server.validate)
+"""
