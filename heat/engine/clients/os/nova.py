@@ -245,6 +245,16 @@ class NovaClientPlugin(client_plugin.ClientPlugin):
             raise exception.EntityNotFound(entity='Flavor', name=flavor)
         return flavor_id
 
+    def get_flavor(self, flavor):
+        """Get the flavor object for the specified flavor name.
+
+
+        :param flavor: the name of the flavor to find
+        :returns: a flavor object with name :flavor:
+        """
+        if flavor:
+            return self.client().flavors.get(self.get_flavor_id(flavor))
+
     def get_host(self, host_name):
         """Get the host id specified by name.
 

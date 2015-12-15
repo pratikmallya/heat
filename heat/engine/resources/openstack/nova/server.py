@@ -123,6 +123,9 @@ class Server(stack_user.StackUser, sh.SchedulerHintsMixin,
         'instance_name', 'accessIPv4', 'accessIPv6', 'console_urls',
     )
 
+    # valid image Status
+    IMAGE_STATUS_ACTIVE = 'active'
+
     properties_schema = {
         NAME: properties.Schema(
             properties.Schema.STRING,
@@ -1235,10 +1238,27 @@ class Server(stack_user.StackUser, sh.SchedulerHintsMixin,
         bootable_vol = self._validate_block_device_mapping()
 
         # make sure the image exists if specified.
-        image = self.properties[self.IMAGE]
-        if not image and not bootable_vol:
+        if not self.properties.get(self.IMAGE) and not bootable_vol:
             msg = _('Neither image nor bootable volume is specified for'
                     ' instance %s') % self.name
+            raise exception.StackValidationFailed(message=msg)
+
+        # validate image properties
+        image = self.client_plugin('glance').get_image(
+            self.properties.get(self.IMAGE))
+        if image and image.status.lower() != self.IMAGE_STATUS_ACTIVE:
+            msg = _('Image status is required to be %(cstatus)s not '
+                    '%(wstatus)s.') % {
+                'cstatus': self.IMAGE_STATUS_ACTIVE,
+                'wstatus': image.status}
+            raise exception.StackValidationFailed(message=msg)
+
+        flavor = self.client_plugin().get_flavor(self.properties[self.FLAVOR])
+        if image and flavor.ram < image.min_ram:
+            msg = _('Image %(image)s requires %(imram)s minimum ram.'
+                    'Flavor %(flavor)s has only %(flram)s.') % {
+                'image': self.properties[self.IMAGE], 'imram': image.min_ram,
+                'flavor': self.properties[self.FLAVOR], 'flram': flavor.ram}
             raise exception.StackValidationFailed(message=msg)
 
         # network properties 'uuid' and 'network' shouldn't be used
