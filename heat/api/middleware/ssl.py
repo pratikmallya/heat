@@ -12,7 +12,7 @@
 # under the License.
 
 from oslo_config import cfg
-from oslo_middleware import ssl
+from oslo_middleware import http_proxy_to_wsgi
 
 ssl_middleware_opts = [
     cfg.StrOpt('secure_proxy_ssl_header',
@@ -24,12 +24,13 @@ ssl_middleware_opts = [
 ]
 
 
-class SSLMiddleware(ssl.SSLMiddleware):
+class SSLMiddleware(http_proxy_to_wsgi.HTTPProxyToWSGI):
 
     def __init__(self, application, *args, **kwargs):
         # NOTE(cbrandily): calling super(ssl.SSLMiddleware, self).__init__
         # allows to define our opt (including a deprecation).
-        super(ssl.SSLMiddleware, self).__init__(application, *args, **kwargs)
+        super(http_proxy_to_wsgi.HTTPProxyToWSGI, self).__init__(
+            application, *args, **kwargs)
         self.oslo_conf.register_opts(
             ssl_middleware_opts, group='oslo_middleware')
 
