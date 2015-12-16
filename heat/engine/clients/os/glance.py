@@ -83,6 +83,15 @@ class GlanceClientPlugin(client_plugin.ClientPlugin):
         :raises: exception.EntityNotFound,
                  exception.PhysicalResourceNameAmbiguity
         """
+        return self.get_image(image_identifier).id
+
+    def get_image(self, image_identifier):
+        """Return the image object for the specified image name/id.
+
+        :param image_identifier: image name
+        :returns: an image object with name/id :image_identifier:
+        :raises: exception.EntityNotFound
+        """
         try:
             filters = {'name': image_identifier}
             image_list = list(self.client().images.list(filters=filters))
@@ -97,7 +106,7 @@ class GlanceClientPlugin(client_plugin.ClientPlugin):
             raise exception.PhysicalResourceNameAmbiguity(
                 name=image_identifier)
         else:
-            return image_list[0].id
+            return image_list[0]
 
 
 class ImageConstraint(constraints.BaseCustomConstraint):
