@@ -22,6 +22,7 @@ from stevedore import extension
 
 from heat.common import exception
 from heat.common.i18n import _
+from heat.common import template_format
 from heat.engine import environment
 from heat.objects import raw_template as template_object
 
@@ -108,7 +109,8 @@ class Template(collections.Mapping):
     def __init__(self, template, template_id=None, files=None, env=None):
         """Initialise the template with JSON object and set of Parameters."""
         self.id = template_id
-        self.t = template
+        self.raw_data = template
+        self.t = template_format.simple_parse(self.raw_data)
         self.files = files or {}
         self.maps = self[self.MAPPINGS]
         self.env = env or environment.Environment({})
@@ -127,14 +129,16 @@ class Template(collections.Mapping):
         if t is None:
             t = template_object.RawTemplate.get_by_id(context, template_id)
         env = environment.Environment(t.environment)
-        return cls(t.template, template_id=template_id, files=t.files, env=env)
+        return cls(t.template, template_id=template_id, files=t.files, env=env,
+                   raw_data=t.raw_data)
 
     def store(self, context=None):
         """Store the Template in the database and return its ID."""
         rt = {
             'template': self.t,
             'files': self.files,
-            'environment': self.env.user_env_as_dict()
+            'environment': self.env.user_env_as_dict(),
+            'raw_data': self.raw_data
         }
         if self.id is None:
             new_rt = template_object.RawTemplate.create(context, rt)

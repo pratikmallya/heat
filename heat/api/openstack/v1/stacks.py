@@ -95,7 +95,7 @@ class InstantiationData(object):
         if rpc_api.PARAM_ADOPT_STACK_DATA in self.data:
             adopt_data = self.data[rpc_api.PARAM_ADOPT_STACK_DATA]
             try:
-                adopt_data = template_format.simple_parse(adopt_data)
+                template_format.simple_parse(adopt_data)
                 return adopt_data['template']
             except (ValueError, KeyError) as ex:
                 err_reason = _('Invalid adopt data: %s') % ex
@@ -120,7 +120,8 @@ class InstantiationData(object):
                 raise exc.HTTPBadRequest(_("No template specified"))
 
         with self.parse_error_check('Template'):
-            return template_format.parse(template_data)
+            template_format.parse(template_data)
+            return template_data
 
     def environment(self):
         """Get the user-supplied environment for the stack in YAML format.
