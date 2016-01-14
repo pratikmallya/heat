@@ -17,6 +17,7 @@ import contextlib
 from oslo_log import log as logging
 import six
 from six.moves.urllib import parse
+import yaml
 from webob import exc
 
 from heat.api.openstack.v1 import util
@@ -434,6 +435,12 @@ class StackController(object):
 
         if templ is None:
             raise exc.HTTPNotFound()
+
+        tmpl_format = req.params.get('format', '')
+        if tmpl_format.lower() == 'yaml':
+            templ = yaml.dump(
+                templ, Dumper=template_format.yaml_dumper,
+                default_flow_style=False)
 
         # TODO(zaneb): always set Content-type to application/json
         return templ

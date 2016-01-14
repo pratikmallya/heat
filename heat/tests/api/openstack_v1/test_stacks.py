@@ -1606,6 +1606,27 @@ class StackControllerTest(tools.ControllerTest, common.HeatTestCase):
         self.assertEqual(template, response)
         self.m.VerifyAll()
 
+    def test_get_template_yaml_format(self, mock_enforce):
+        self._mock_enforce_setup(mock_enforce, 'template', True)
+        identity = identifier.HeatIdentifier(self.tenant, 'wordpress', '6')
+        params = {'format': 'yaml'}
+        req = self._get(
+            '/stacks/%(stack_name)s/%(stack_id)s' % identity, params=params)
+        template = {u'Foo': u'bar'}
+        self.m.StubOutWithMock(rpc_client.EngineClient, 'call')
+        rpc_client.EngineClient.call(
+            req.context,
+            ('get_template', {'stack_identity': dict(identity)})
+        ).AndReturn(template)
+        self.m.ReplayAll()
+
+        response = self.controller.template(req, tenant_id=identity.tenant,
+                                            stack_name=identity.stack_name,
+                                            stack_id=identity.stack_id)
+        yaml_template = 'Foo: bar\n'
+        self.assertEqual(yaml_template, response)
+        self.m.VerifyAll()
+
     def test_get_template_err_denied_policy(self, mock_enforce):
         self._mock_enforce_setup(mock_enforce, 'template', False)
         identity = identifier.HeatIdentifier(self.tenant, 'wordpress', '6')
