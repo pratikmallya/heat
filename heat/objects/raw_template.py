@@ -37,6 +37,7 @@ class RawTemplate(
         'files': heat_fields.JsonField(nullable=True),
         'template': heat_fields.JsonField(),
         'environment': heat_fields.JsonField(),
+        'raw_data': fields.StringField(),
     }
 
     @staticmethod

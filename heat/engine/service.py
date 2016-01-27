@@ -292,7 +292,7 @@ class EngineService(service.Service):
     by the RPC caller.
     """
 
-    RPC_API_VERSION = '1.21'
+    RPC_API_VERSION = '1.23'
 
     def __init__(self, host, topic):
         super(EngineService, self).__init__()
@@ -608,8 +608,9 @@ class EngineService(service.Service):
             raise exception.RequestLimitExceeded(message=message)
 
     def _parse_template_and_validate_stack(self, cnxt, stack_name, template,
-                                           params, files, args, owner_id=None,
-                                           nested_depth=0, user_creds_id=None,
+                                           params, files, raw_template, args,
+                                           owner_id=None, nested_depth=0,
+                                           user_creds_id=None,
                                            stack_user_project_id=None,
                                            convergence=False,
                                            parent_resource_name=None):
@@ -630,7 +631,8 @@ class EngineService(service.Service):
 
         env = environment.Environment(params)
 
-        tmpl = templatem.Template(template, files=files, env=env)
+        tmpl = templatem.Template(template, files=files, env=env,
+                                  raw_template=raw_template)
         self._validate_new_stack(cnxt, stack_name, tmpl)
 
         stack = parser.Stack(cnxt, stack_name, tmpl,
@@ -679,9 +681,10 @@ class EngineService(service.Service):
         return api.format_stack_preview(stack)
 
     @context.request_context
-    def create_stack(self, cnxt, stack_name, template, params, files, args,
-                     owner_id=None, nested_depth=0, user_creds_id=None,
-                     stack_user_project_id=None, parent_resource_name=None):
+    def create_stack(self, cnxt, stack_name, template, params, files,
+                     raw_template, args, owner_id=None, nested_depth=0,
+                     user_creds_id=None, stack_user_project_id=None,
+                     parent_resource_name=None):
         """Create a new stack using the template provided.
 
         Note that at this stage the template has already been fetched from the
@@ -692,6 +695,7 @@ class EngineService(service.Service):
         :param template: Template of stack you want to create.
         :param params: Stack Input Params
         :param files: Files referenced from the template
+        :param raw_template: Raw template of stack you want to create.
         :param args: Request parameters/args passed from API
         :param owner_id: parent stack ID for nested stacks, only expected when
                          called from another heat-engine (not a user option)
@@ -752,7 +756,7 @@ class EngineService(service.Service):
         return dict(stack.identifier())
 
     def _prepare_stack_updates(self, cnxt, current_stack, template, params,
-                               files, args):
+                               files, args, raw_template=None):
         """Return the current and updated stack for a given transition.
 
         Changes *will not* be persisted, this is a helper method for
@@ -784,11 +788,13 @@ class EngineService(service.Service):
 
             if template is not None:
                 new_template = template
+                new_raw_template = raw_template
             elif (current_stack.convergence or
                   current_stack.status == current_stack.COMPLETE):
                 # If convergence is enabled, or the stack is complete, we can
                 # just use the current template...
                 new_template = current_stack.t.t
+                new_raw_template = current_stack.t.raw_template
             else:
                 # ..but if it's FAILED without convergence things may be in an
                 # inconsistent state, so we try to fall back on a stored copy
@@ -798,6 +804,7 @@ class EngineService(service.Service):
                     prev_t = templatem.Template.load(
                         cnxt, current_stack.prev_raw_template_id)
                     new_template = prev_t.t
+                    new_raw_template = prev_t.raw_template
                 else:
                     # Nothing we can do, the failed update happened before
                     # we started storing prev_raw_template_id
@@ -811,7 +818,8 @@ class EngineService(service.Service):
             new_files = files
             new_template = template
 
-        tmpl = templatem.Template(new_template, files=new_files, env=new_env)
+        tmpl = templatem.Template(new_template, files=new_files, env=new_env,
+                                  raw_template=new_raw_template)
 
         max_resources = cfg.CONF.max_resources_per_stack
         if max_resources != -1 and len(tmpl[tmpl.RESOURCES]) > max_resources:
@@ -839,8 +847,8 @@ class EngineService(service.Service):
         return tmpl, current_stack, updated_stack
 
     @context.request_context
-    def update_stack(self, cnxt, stack_identity, template, params,
-                     files, args):
+    def update_stack(self, cnxt, stack_identity, template, params, files,
+                     raw_template, args):
         """Update an existing stack based on the provided template and params.
 
         Note that at this stage the template has already been fetched from the
@@ -851,6 +859,7 @@ class EngineService(service.Service):
         :param template: Template of stack you want to create.
         :param params: Stack Input Params
         :param files: Files referenced from the template
+        :param raw_template: Raw template of stack you want to create.
         :param args: Request parameters/args passed from API
         """
         # Get the database representation of the existing stack
@@ -872,7 +881,7 @@ class EngineService(service.Service):
             raise exception.NotSupported(feature=msg)
 
         tmpl, current_stack, updated_stack = self._prepare_stack_updates(
-            cnxt, current_stack, template, params, files, args)
+            cnxt, current_stack, template, params, files, args, raw_template)
 
         if current_stack.convergence:
             current_stack.converge_stack(template=tmpl,
@@ -1068,11 +1077,12 @@ class EngineService(service.Service):
         return clients.Clients(cnxt).authenticated()
 
     @context.request_context
-    def get_template(self, cnxt, stack_identity):
+    def get_template(self, cnxt, stack_identity, tmpl_format):
         """Get the template.
 
         :param cnxt: RPC context.
         :param stack_identity: Name of the stack you want to see.
+        :param tmpl_format: Format of the template ('raw' or 'parsed')
         """
         s = self._get_stack(cnxt, stack_identity, show_deleted=True)
         if s:

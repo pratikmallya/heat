@@ -49,6 +49,8 @@ yaml_loader.add_constructor(u'tag:yaml.org,2002:timestamp',
 
 
 def simple_parse(tmpl_str):
+    if isinstance(tmpl_str, dict):
+        return tmpl_str
     try:
         tpl = jsonutils.loads(tmpl_str)
     except ValueError:

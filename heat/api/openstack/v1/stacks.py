@@ -85,39 +85,48 @@ class InstantiationData(object):
             raise exc.HTTPBadRequest(_("No stack name specified"))
         return self.data[self.PARAM_STACK_NAME]
 
-    def template(self):
+    def raw_template(self):
         """Get template file contents.
 
         Get template file contents, either inline, from stack adopt data or
         from a URL, in JSON or YAML format.
         """
-        template_data = None
         if rpc_api.PARAM_ADOPT_STACK_DATA in self.data:
             adopt_data = self.data[rpc_api.PARAM_ADOPT_STACK_DATA]
             try:
-                adopt_data = template_format.simple_parse(adopt_data)
-                return adopt_data['template']
+                template_format.simple_parse(adopt_data)
+                return adopt_data
             except (ValueError, KeyError) as ex:
                 err_reason = _('Invalid adopt data: %s') % ex
                 raise exc.HTTPBadRequest(err_reason)
         elif self.PARAM_TEMPLATE in self.data:
-            template_data = self.data[self.PARAM_TEMPLATE]
-            if isinstance(template_data, dict):
-                return template_data
+            return self.data[self.PARAM_TEMPLATE]
         elif self.PARAM_TEMPLATE_URL in self.data:
             url = self.data[self.PARAM_TEMPLATE_URL]
             LOG.debug('TemplateUrl %s' % url)
             try:
-                template_data = urlfetch.get(url)
+                return urlfetch.get(url)
             except IOError as ex:
                 err_reason = _('Could not retrieve template: %s') % ex
                 raise exc.HTTPBadRequest(err_reason)
 
+        if self.patch:
+            return None
+        else:
+            raise exc.HTTPBadRequest(_("No template specified"))
+
+    def template(self):
+        """Get parsed version of template file contents.
+
+        Get template file contents, either inline, from stack adopt data or
+        from a URL, in JSON or YAML format.
+        """
+        template_data = self.raw_template()
+        if isinstance(template_data, dict):
+            return template_data
+
         if template_data is None:
-            if self.patch:
-                return None
-            else:
-                raise exc.HTTPBadRequest(_("No template specified"))
+            return None
 
         with self.parse_error_check('Template'):
             return template_format.parse(template_data)
@@ -377,6 +386,7 @@ class StackController(object):
                                               data.template(),
                                               data.environment(),
                                               data.files(),
+                                              data.raw_template(),
                                               args)
 
         formatted_stack = stacks_view.format_stack(
@@ -429,8 +439,9 @@ class StackController(object):
     def template(self, req, identity):
         """Get the template body for an existing stack."""
 
-        templ = self.rpc_client.get_template(req.context,
-                                             identity)
+        tmpl_format = req.params.get('format', 'parsed')
+        templ = self.rpc_client.get_template(req.context, identity,
+                                             tmpl_format=tmpl_format)
 
         if templ is None:
             raise exc.HTTPNotFound()
@@ -449,6 +460,7 @@ class StackController(object):
                                      data.template(),
                                      data.environment(),
                                      data.files(),
+                                     data.raw_template(),
                                      args)
 
         raise exc.HTTPAccepted()

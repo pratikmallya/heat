@@ -105,9 +105,11 @@ class Template(collections.Mapping):
 
         return super(Template, cls).__new__(TemplateClass)
 
-    def __init__(self, template, template_id=None, files=None, env=None):
+    def __init__(self, template, template_id=None, files=None, env=None,
+                 raw_template=None):
         """Initialise the template with JSON object and set of Parameters."""
         self.id = template_id
+        self.raw_template = raw_template
         self.t = template
         self.files = files or {}
         self.maps = self[self.MAPPINGS]
@@ -127,14 +129,16 @@ class Template(collections.Mapping):
         if t is None:
             t = template_object.RawTemplate.get_by_id(context, template_id)
         env = environment.Environment(t.environment)
-        return cls(t.template, template_id=template_id, files=t.files, env=env)
+        return cls(t.template, template_id=template_id, files=t.files, env=env,
+                   raw_template=t.raw_data)
 
     def store(self, context=None):
         """Store the Template in the database and return its ID."""
         rt = {
             'template': self.t,
             'files': self.files,
-            'environment': self.env.user_env_as_dict()
+            'environment': self.env.user_env_as_dict(),
+            'raw_data': self.raw_template
         }
         if self.id is None:
             new_rt = template_object.RawTemplate.create(context, rt)

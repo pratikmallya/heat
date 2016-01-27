@@ -41,6 +41,7 @@ class EngineClient(object):
         1.20 - Add resolve_outputs to stack show
         1.21 - Add deployment_id to create_software_deployment
         1.22 - Add support for stack export
+        1.23 - Add support for raw templates
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -206,7 +207,8 @@ class EngineClient(object):
                                        template=template,
                                        params=params, files=files, args=args))
 
-    def create_stack(self, ctxt, stack_name, template, params, files, args):
+    def create_stack(self, ctxt, stack_name, template, params, files,
+                     raw_template, args):
         """Creates a new stack using the template provided.
 
         Note that at this stage the template has already been fetched from the
@@ -217,14 +219,16 @@ class EngineClient(object):
         :param template: Template of stack you want to create.
         :param params: Stack Input Params/Environment
         :param files: files referenced from the environment.
+        :param raw_template: Raw template of stack you want to create.
         :param args: Request parameters/args passed from API
         """
         return self._create_stack(ctxt, stack_name, template, params, files,
-                                  args)
+                                  raw_template, args)
 
-    def _create_stack(self, ctxt, stack_name, template, params, files, args,
-                      owner_id=None, nested_depth=0, user_creds_id=None,
-                      stack_user_project_id=None, parent_resource_name=None):
+    def _create_stack(self, ctxt, stack_name, template, params, files,
+                      raw_template, args, owner_id=None, nested_depth=0,
+                      user_creds_id=None, stack_user_project_id=None,
+                      parent_resource_name=None):
         """Internal interface for engine-to-engine communication via RPC.
 
         Allows some additional options which should not be exposed to users via
@@ -239,16 +243,17 @@ class EngineClient(object):
         return self.call(
             ctxt, self.make_msg('create_stack', stack_name=stack_name,
                                 template=template,
-                                params=params, files=files, args=args,
+                                params=params, files=files,
+                                raw_template=raw_template, args=args,
                                 owner_id=owner_id,
                                 nested_depth=nested_depth,
                                 user_creds_id=user_creds_id,
                                 stack_user_project_id=stack_user_project_id,
                                 parent_resource_name=parent_resource_name),
-            version='1.8')
+            version='1.23')
 
     def update_stack(self, ctxt, stack_identity, template, params,
-                     files, args):
+                     raw_template, files, args):
         """Updates an existing stack based on the provided template and params.
 
         Note that at this stage the template has already been fetched from the
@@ -259,14 +264,17 @@ class EngineClient(object):
         :param template: Template of stack you want to create.
         :param params: Stack Input Params/Environment
         :param files: files referenced from the environment.
+        :param raw_template: Raw template of stack you want to create.
         :param args: Request parameters/args passed from API
         """
-        return self.call(ctxt, self.make_msg('update_stack',
-                                             stack_identity=stack_identity,
-                                             template=template,
-                                             params=params,
-                                             files=files,
-                                             args=args))
+        return self.call(
+            ctxt, self.make_msg('update_stack', stack_identity=stack_identity,
+                                template=template,
+                                params=params,
+                                files=files,
+                                raw_template=raw_template,
+                                args=args),
+            version='1.23')
 
     def preview_update_stack(self, ctxt, stack_identity, template, params,
                              files, args):
@@ -320,14 +328,17 @@ class EngineClient(object):
         """
         return self.call(ctxt, self.make_msg('authenticated_to_backend'))
 
-    def get_template(self, ctxt, stack_identity):
+    def get_template(self, ctxt, stack_identity, tmpl_format):
         """Get the template.
 
         :param ctxt: RPC context.
         :param stack_name: Name of the stack you want to see.
+        :param tmpl_format: Format of the template ('raw' or 'parsed')
         """
-        return self.call(ctxt, self.make_msg('get_template',
-                                             stack_identity=stack_identity))
+        return self.call(
+            ctxt, self.make_msg('get_template',
+                                stack_identity=stack_identity),
+            version='1.23')
 
     def delete_stack(self, ctxt, stack_identity, cast=True):
         """Deletes a given stack.
